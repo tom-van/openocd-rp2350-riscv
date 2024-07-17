@@ -938,8 +938,74 @@ FLASH_BANK_COMMAND_HANDLER(rp2040_flash_bank_command)
 	return ERROR_OK;
 }
 
+
+COMMAND_HANDLER(rp2040_rom_api_call_handler)
+{
+	if (CMD_ARGC < 2)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct flash_bank *bank;
+	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = setup_for_raw_flash_cmd(bank);
+	if (retval != ERROR_OK)
+		goto cleanup_and_return;
+
+	struct target *target = bank->target;
+	uint16_t symtype_func = is_arm(target_to_arm(target))
+				 ? RT_FLAG_FUNC_ARM_SEC : RT_FLAG_FUNC_RISCV;
+
+	uint16_t tag = MAKE_TAG(CMD_ARGV[1][0], CMD_ARGV[1][1]);
+	uint16_t fc;
+	uint32_t args[4] = { 0 };
+	for (unsigned int i = 0; i + 2 < CMD_ARGC; i++)
+		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[i + 2], args[i]);
+
+	retval = rp2xxx_lookup_rom_symbol(target, tag, symtype_func, &fc);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Function %.2s not found in RP2xxx ROM.", CMD_ARGV[1]);
+		goto cleanup_and_return;
+	}
+
+	LOG_INFO("RP2xxx ROM API function %.2s @ %04" PRIx16, CMD_ARGV[1], fc);
+
+	struct rp2040_flash_bank *priv = bank->driver_priv;
+	retval = rp2xxx_call_rom_func(bank->target, priv, fc, args, ARRAY_SIZE(args));
+	if (retval != ERROR_OK)
+		LOG_ERROR("RP2xxx ROM API call failed");
+
+cleanup_and_return:
+	cleanup_after_raw_flash_cmd(bank);
+	return retval;
+}
+
+static const struct command_registration rp2040_exec_command_handlers[] = {
+	{
+		.name = "rom_api_call",
+		.mode = COMMAND_EXEC,
+		.help = "arbitrary ROM API call",
+		.usage = "bank fc [p0 [p1 [p2 [p3]]]]",
+		.handler = rp2040_rom_api_call_handler,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration rp2040_command_handler[] = {
+	{
+		.name = "rp2xxx",
+		.mode = COMMAND_ANY,
+		.help = "rp2xxx flash controller commands",
+		.usage = "",
+		.chain = rp2040_exec_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 const struct flash_driver rp2040_flash = {
 	.name = "rp2040_flash",
+	.commands = rp2040_command_handler,
 	.flash_bank_command = rp2040_flash_bank_command,
 	.erase =  rp2040_flash_erase,
 	.write = rp2040_flash_write,
