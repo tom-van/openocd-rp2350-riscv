@@ -180,6 +180,9 @@ static const struct jim_nvp nvp_target_event[] = {
 	{ .value = TARGET_EVENT_EXAMINE_FAIL, .name = "examine-fail" },
 	{ .value = TARGET_EVENT_EXAMINE_END, .name = "examine-end" },
 
+	{ .value = TARGET_EVENT_BECOME_UNAVAILABLE, .name = "become-unavailable" },
+	{ .value = TARGET_EVENT_BECOME_AVAILABLE, .name = "become-available" },
+
 	{ .value = TARGET_EVENT_DEBUG_HALTED, .name = "debug-halted" },
 	{ .value = TARGET_EVENT_DEBUG_RESUMED, .name = "debug-resumed" },
 
