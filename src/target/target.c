@@ -483,7 +483,7 @@ int target_poll(struct target *target)
 	int retval;
 
 	/* We can't poll until after examine */
-	if (!target_was_examined(target)) {
+	if (!target_was_examined(target) && target->state != TARGET_UNAVAILABLE) {
 		/* Fail silently lest we pollute the log */
 		return ERROR_FAIL;
 	}
@@ -2971,7 +2971,7 @@ static int handle_target(void *priv)
 			is_jtag_poll_safe() && target;
 			target = target->next) {
 
-		if (!target_was_examined(target))
+		if (!target_was_examined(target) && target->state != TARGET_UNAVAILABLE)
 			continue;
 
 		if (!target->tap->enabled)
