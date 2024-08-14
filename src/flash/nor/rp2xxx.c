@@ -178,14 +178,14 @@ typedef struct rp2xxx_rom_call_batch_record {
 	uint32_t args[4];
 } rp2xxx_rom_call_batch_record_t;
 
-struct rp2040_flash_bank {
+struct rp2xxx_flash_bank {
 	bool probed;						/* flag indicating successful flash probe */
 	uint32_t id;						/* cached SYSINFO CHIP_ID */
 	struct working_area *stack;			/* stack used by Boot ROM calls */
 	/* static code scratchpad used for RAM algorithms -- allocated in advance
 	   so that higher-level calls can just grab all remaining workarea: */
 	struct working_area *ram_algo_space;
-	/* function jump table populated by rp2040_flash_probe() */
+	/* function jump table populated by rp2xxx_flash_probe() */
 	uint16_t jump_flash_exit_xip;
 	uint16_t jump_connect_internal_flash;
 	uint16_t jump_flash_range_erase;
@@ -374,7 +374,7 @@ static int rp2xxx_lookup_rom_symbol(struct target *target, uint16_t tag, uint16_
 	return ERROR_FAIL;
 }
 
-static int rp2xxx_populate_rom_pointer_cache(struct target *target, struct rp2040_flash_bank *priv)
+static int rp2xxx_populate_rom_pointer_cache(struct target *target, struct rp2xxx_flash_bank *priv)
 {
 	const uint16_t symtype_func = is_arm(target_to_arm(target))
 									 ? RT_FLAG_FUNC_ARM_SEC : RT_FLAG_FUNC_RISCV;
@@ -437,7 +437,7 @@ static int rp2xxx_populate_rom_pointer_cache(struct target *target, struct rp204
 
 // Call a list of PC + SP + r0-r3 function call tuples with a single OpenOCD
 // algorithm invocation, to amortise the algorithm overhead over multiple calls:
-static int rp2xxx_call_rom_func_batch(struct target *target, struct rp2040_flash_bank *priv,
+static int rp2xxx_call_rom_func_batch(struct target *target, struct rp2xxx_flash_bank *priv,
 	rp2xxx_rom_call_batch_record_t *calls, unsigned int n_calls)
 {
 	// Note +1 is for the null terminator
@@ -549,7 +549,7 @@ static int rp2xxx_call_rom_func_batch(struct target *target, struct rp2040_flash
 }
 
 // Call a single ROM function, using the default algorithm stack.
-static int rp2xxx_call_rom_func(struct target *target, struct rp2040_flash_bank *priv,
+static int rp2xxx_call_rom_func(struct target *target, struct rp2xxx_flash_bank *priv,
 		uint16_t func_offset, uint32_t argdata[], unsigned int n_args)
 {
 	assert(n_args <= 4); /* only allow register arguments -- capped at just 4 on Arm */
@@ -595,7 +595,7 @@ static int rp2350_init_accessctrl(struct target *target)
 	return ERROR_OK;
 }
 
-static int rp2350_init_arm_core0(struct target *target, struct rp2040_flash_bank *priv)
+static int rp2350_init_arm_core0(struct target *target, struct rp2xxx_flash_bank *priv)
 {
 	// Flash algorithms (and the RCP init stub called by this function) must
 	// run in the Secure state, so flip the state now before attempting to
@@ -654,7 +654,7 @@ static int rp2350_init_arm_core0(struct target *target, struct rp2040_flash_bank
 	return err;
 }
 
-static int setup_for_raw_flash_cmd(struct target *target, struct rp2040_flash_bank *priv)
+static int setup_for_raw_flash_cmd(struct target *target, struct rp2xxx_flash_bank *priv)
 {
 	int err = ERROR_OK;
 
@@ -718,14 +718,14 @@ static int setup_for_raw_flash_cmd(struct target *target, struct rp2040_flash_ba
 	};
 	err = rp2xxx_call_rom_func_batch(target, priv, calls, 2);
 	if (err != ERROR_OK) {
-		LOG_ERROR("RP2040 flash: failed to exit flash XIP mode");
+		LOG_ERROR("RP2xxx flash: failed to exit flash XIP mode");
 		return err;
 	}
 
 	return ERROR_OK;
 }
 
-static int rp2xxx_invalidate_cache_restore_xip(struct target *target, struct rp2040_flash_bank *priv)
+static int rp2xxx_invalidate_cache_restore_xip(struct target *target, struct rp2xxx_flash_bank *priv)
 {
 	// Flash content has changed. We can now do a bit of poking to make
 	// the new flash contents visible to us via memory-mapped (XIP) interface
@@ -756,12 +756,12 @@ static int rp2xxx_invalidate_cache_restore_xip(struct target *target, struct rp2
 
 	int retval = rp2xxx_call_rom_func_batch(target, priv, finishing_calls, num_finishing_calls);
 	if (retval != ERROR_OK)
-		LOG_ERROR("RP2040 write: failed to flush flash cache/restore XIP");
+		LOG_ERROR("RP2xxx: failed to flush flash cache/restore XIP");
 
 	return retval;
 }
 
-static void cleanup_after_raw_flash_cmd(struct target *target, struct rp2040_flash_bank *priv)
+static void cleanup_after_raw_flash_cmd(struct target *target, struct rp2xxx_flash_bank *priv)
 {
 	/* OpenOCD is prone to trashing work-area allocations on target state
 	   transitions, which leaves us with stale work area pointers in our
@@ -778,11 +778,11 @@ static void cleanup_after_raw_flash_cmd(struct target *target, struct rp2040_fla
 	}
 }
 
-static int rp2040_flash_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset, uint32_t count)
+static int rp2xxx_flash_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset, uint32_t count)
 {
 	LOG_DEBUG("Writing %d bytes starting at 0x%" PRIx32, count, offset);
 
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 	struct target *target = bank->target;
 
 	if (target->state != TARGET_HALTED) {
@@ -844,9 +844,9 @@ cleanup_and_return:
 	return err;
 }
 
-static int rp2040_flash_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
+static int rp2xxx_flash_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
 {
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 	struct target *target = bank->target;
 
 	if (target->state != TARGET_HALTED) {
@@ -856,7 +856,7 @@ static int rp2040_flash_erase(struct flash_bank *bank, unsigned int first, unsig
 
 	uint32_t start_addr = bank->sectors[first].offset;
 	uint32_t length = bank->sectors[last].offset + bank->sectors[last].size - start_addr;
-	LOG_DEBUG("RP2040 erase %d bytes starting at 0x%" PRIx32, length, start_addr);
+	LOG_DEBUG("erase %d bytes starting at 0x%" PRIx32, length, start_addr);
 
 	int err = setup_for_raw_flash_cmd(target, priv);
 	if (err != ERROR_OK)
@@ -1060,7 +1060,7 @@ static int rp2xxx_spi_tx_rx(struct flash_bank *bank,
 		unsigned int dummy_len,
 		uint8_t *rx, unsigned int rx_len)
 {
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 	struct target *target = bank->target;
 
 	if (IS_RP2040(priv->id))
@@ -1074,7 +1074,7 @@ static int rp2xxx_spi_tx_rx(struct flash_bank *bank,
 static int rp2xxx_read_sfdp_block(struct flash_bank *bank, uint32_t addr,
 		unsigned int words, uint32_t *buffer)
 {
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 
 	uint8_t cmd[4] = { SPIFLASH_READ_SFDP };
 	uint8_t data[4 * words + priv->sfdp_dummy_detect];
@@ -1102,9 +1102,9 @@ static int rp2xxx_read_sfdp_block(struct flash_bank *bank, uint32_t addr,
 	return retval;
 }
 
-static int rp2040_flash_probe(struct flash_bank *bank)
+static int rp2xxx_flash_probe(struct flash_bank *bank)
 {
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 	struct target *target = bank->target;
 
 	int retval = target_read_u32(target, RP2XXX_SYSINFO_CHIP_ID, &priv->id);
@@ -1198,31 +1198,23 @@ static int rp2040_flash_probe(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int rp2040_flash_auto_probe(struct flash_bank *bank)
+static int rp2xxx_flash_auto_probe(struct flash_bank *bank)
 {
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 
 	if (priv->probed)
 		return ERROR_OK;
 
-	return rp2040_flash_probe(bank);
-}
-
-static void rp2040_flash_free_driver_priv(struct flash_bank *bank)
-{
-	free(bank->driver_priv);
-	bank->driver_priv = NULL;
+	return rp2xxx_flash_probe(bank);
 }
 
 /* -----------------------------------------------------------------------------
    Driver boilerplate */
 
-FLASH_BANK_COMMAND_HANDLER(rp2040_flash_bank_command)
+FLASH_BANK_COMMAND_HANDLER(rp2xxx_flash_bank_command)
 {
-	struct rp2040_flash_bank *priv;
-	priv = malloc(sizeof(struct rp2040_flash_bank));
-	memset(priv, 0, sizeof(struct rp2040_flash_bank));
-	priv->probed = false;
+	struct rp2xxx_flash_bank *priv;
+	priv = calloc(1, sizeof(struct rp2xxx_flash_bank));
 	priv->size_override = bank->size != 0;
 
 	/* Set up driver_priv */
@@ -1232,7 +1224,7 @@ FLASH_BANK_COMMAND_HANDLER(rp2040_flash_bank_command)
 }
 
 
-COMMAND_HANDLER(rp2040_rom_api_call_handler)
+COMMAND_HANDLER(rp2xxx_rom_api_call_handler)
 {
 	if (CMD_ARGC < 2)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1242,7 +1234,7 @@ COMMAND_HANDLER(rp2040_rom_api_call_handler)
 	if (retval != ERROR_OK)
 		return retval;
 
-	struct rp2040_flash_bank *priv = bank->driver_priv;
+	struct rp2xxx_flash_bank *priv = bank->driver_priv;
 	struct target *target = bank->target;
 
 	if (target->state != TARGET_HALTED) {
@@ -1280,7 +1272,7 @@ cleanup_and_return:
 	return retval;
 }
 
-COMMAND_HANDLER(rp2040_switch_target_handler)
+COMMAND_HANDLER(rp2xxx_switch_target_handler)
 {
 	if (CMD_ARGC != 2)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1299,10 +1291,10 @@ COMMAND_HANDLER(rp2040_switch_target_handler)
 
 	struct flash_bank *bank;
 	for (bank = flash_bank_list(); bank; bank = bank->next) {
-		if (bank->driver == &rp2040_flash) {
+		if (bank->driver == &rp2xxx_flash) {
 			if (bank->target == old_target) {
 				bank->target = new_target;
-				struct rp2040_flash_bank *priv = bank->driver_priv;
+				struct rp2xxx_flash_bank *priv = bank->driver_priv;
 				priv->probed = false;
 				return ERROR_OK;
 			} else if (bank->target == new_target) {
@@ -1315,44 +1307,44 @@ COMMAND_HANDLER(rp2040_switch_target_handler)
 	return ERROR_FAIL;
 }
 
-static const struct command_registration rp2040_exec_command_handlers[] = {
+static const struct command_registration rp2xxx_exec_command_handlers[] = {
 	{
 		.name = "rom_api_call",
 		.mode = COMMAND_EXEC,
 		.help = "arbitrary ROM API call",
 		.usage = "bank fc [p0 [p1 [p2 [p3]]]]",
-		.handler = rp2040_rom_api_call_handler,
+		.handler = rp2xxx_rom_api_call_handler,
 	},
 	{
 		.name = "_switch_target",
 		.mode = COMMAND_EXEC,
 		.help = "internal use",
 		.usage = "old_target new_target",
-		.handler = rp2040_switch_target_handler,
+		.handler = rp2xxx_switch_target_handler,
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration rp2040_command_handler[] = {
+static const struct command_registration rp2xxx_command_handler[] = {
 	{
 		.name = "rp2xxx",
 		.mode = COMMAND_ANY,
 		.help = "rp2xxx flash controller commands",
 		.usage = "",
-		.chain = rp2040_exec_command_handlers,
+		.chain = rp2xxx_exec_command_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
-const struct flash_driver rp2040_flash = {
-	.name = "rp2040_flash",
-	.commands = rp2040_command_handler,
-	.flash_bank_command = rp2040_flash_bank_command,
-	.erase =  rp2040_flash_erase,
-	.write = rp2040_flash_write,
+const struct flash_driver rp2xxx_flash = {
+	.name = "rp2xxx",
+	.commands = rp2xxx_command_handler,
+	.flash_bank_command = rp2xxx_flash_bank_command,
+	.erase =  rp2xxx_flash_erase,
+	.write = rp2xxx_flash_write,
 	.read = default_flash_read,
-	.probe = rp2040_flash_probe,
-	.auto_probe = rp2040_flash_auto_probe,
+	.probe = rp2xxx_flash_probe,
+	.auto_probe = rp2xxx_flash_auto_probe,
 	.erase_check = default_flash_blank_check,
-	.free_driver_priv = rp2040_flash_free_driver_priv
+	.free_driver_priv = default_flash_free_driver_priv
 };
